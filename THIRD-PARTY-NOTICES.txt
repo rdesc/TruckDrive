@@ -1,0 +1,25 @@
+THIRD-PARTY NOTICES
+TruckDrive Devkit
+
+This software requires the following third-party dependencies, which
+are not distributed with this repository and must be obtained separately
+by the user. Each dependency is subject to its own license terms.
+
+1. PyQt5
+Source:   https://www.riverbankcomputing.com/software/pyqt/
+License:  GNU Lesser General Public License v3 (LGPLv3)
+https://www.gnu.org/licenses/lgpl-3.0.html
+Note:     PyQt5 is developed by Riverbank Computing Limited and is
+not affiliated with or endorsed by Torc Robotics, Inc.
+Users must obtain PyQt5 separately and comply with the
+terms of the LGPLv3.
+
+2. MMDetection
+Source:   https://github.com/open-mmlab/mmdetection
+License:  Apache License, Version 2.0
+http://www.apache.org/licenses/LICENSE-2.0
+Copyright 2018-2023 OpenMMLab.
+Note:     MMDetection is developed by OpenMMLab and is not affiliated
+with or endorsed by Torc Robotics, Inc. Users must obtain
+MMDetection separately and comply with the terms of the
+Apache License, Version 2.0.

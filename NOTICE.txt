@@ -1,0 +1,11 @@
+TruckDrive
+Copyright 2026 Torc Robotics, Inc.
+
+This product is licensed under the Apache License, Version 2.0.
+See LICENSE.txt for the full license text.
+
+This software is distributed independently of the TruckDrive Dataset.
+The TruckDrive Dataset is governed by separate license terms available
+at: [https://github.com/torc-ai/TruckDrive]
+
+Third-party dependencies are listed in THIRD-PARTY-NOTICES.txt.
