@@ -6,8 +6,8 @@
 
 [![Paper](https://img.shields.io/badge/Paper-PDF-2ea44f?style=flat-square)](https://arxiv.org/pdf/2603.02413)
 [![arXiv](https://img.shields.io/badge/arXiv-2603.02413-b31b1b?style=flat-square)](https://arxiv.org/abs/2603.02413)
-[![Project Page](https://img.shields.io/badge/Project-Page-f0ad4e?style=flat-square)](PLACEHOLDER_PROJECT_WEBSITE_URL)
-[![Data](https://img.shields.io/badge/Data-Access_Portal-6f42c1?style=flat-square)](PLACEHOLDER_DATASET_ACCESS_URL)
+[![Project Page](https://img.shields.io/badge/Project-Page-f0ad4e?style=flat-square)](http://torc-ai.github.io/TruckDrive)
+[![Data](https://img.shields.io/badge/Data-Access_Portal-6f42c1?style=flat-square)](https://d3ehgyu1hepsur.cloudfront.net/?prefix=TruckDrive/)
 
 **Filippo Ghilotti, Edoardo Palladin, Samuel Brucker, Adam Sigal, Mario Bijelic, Felix Heide**
 
@@ -26,7 +26,7 @@ This repository hosts the **TruckDrive Devkit** together with release documentat
 This devkit is released under the **Apache License, Version 2.0**.
 See [`LICENSE.txt`](./LICENSE.txt) for the full license text.
 
-This devkit is distributed independently of the TruckDrive Dataset. The dataset is governed by separate license terms. See the [Dataset Repository](PLACEHOLDER_DATASET_REPO_URL) for details.
+This devkit is distributed independently of the TruckDrive Dataset. The dataset is governed by separate license terms. See the [Dataset Repository](http://torc-ai.github.io/TruckDrive) for details.
 
 
 ## Highlights
