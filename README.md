@@ -7,7 +7,7 @@
 [![Paper](https://img.shields.io/badge/Paper-PDF-2ea44f?style=flat-square)](https://arxiv.org/pdf/2603.02413)
 [![arXiv](https://img.shields.io/badge/arXiv-2603.02413-b31b1b?style=flat-square)](https://arxiv.org/abs/2603.02413)
 [![Project Page](https://img.shields.io/badge/Project-Page-f0ad4e?style=flat-square)](http://torc-ai.github.io/TruckDrive)
-[![Data](https://img.shields.io/badge/Data-Access_Portal-6f42c1?style=flat-square)](https://d3ehgyu1hepsur.cloudfront.net/?prefix=TruckDrive/)
+[![Data](https://img.shields.io/badge/Data-Access_Portal-6f42c1?style=flat-square)](https://d3ehgyu1hepsur.cloudfront.net/?prefix=)
 
 **Filippo Ghilotti, Edoardo Palladin, Samuel Brucker, Adam Sigal, Mario Bijelic, Felix Heide**
 
@@ -28,6 +28,30 @@ See [`LICENSE.txt`](./LICENSE.txt) for the full license text.
 
 This devkit is distributed independently of the TruckDrive Dataset. The dataset is governed by separate license terms. See the [Dataset Repository](http://torc-ai.github.io/TruckDrive) for details.
 
+## Downloading the TruckDrive Dataset
+To download the dataset use the provided [bash script](download_truckdrive.sh).
+For faster downloads, install `aria2` first:
+```bash
+sudo apt update
+sudo apt install -y aria2
+```
+Download the full dataset:
+```bash
+bash download_truckdrive.sh \
+  --out /PATH/TO/TruckDrive \
+  --all-scenes \
+  --all-modalities 
+```
+By default, the script uses aria2c automatically if it is installed, with --jobs 4 and --aria2-connections 8, otherwise it defaults to curl (slower).
+To download only one scene:
+```bash
+bash download_truckdrive.sh \
+  --out /PATH/TO/TruckDrive \
+  --scene scene_28_1 \
+  --all-modalities 
+```
+To download only specific folders, replace --all-modalities with options such as:
+--camera --lidar --radar --poses --calibration --annotations --accumulated-gt-depth
 
 ## Highlights
 
