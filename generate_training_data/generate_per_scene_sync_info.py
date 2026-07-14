@@ -35,6 +35,12 @@ def parse_arguments():
         action="store_true",
         help="Enable multiprocessing.",
     )
+    parser.add_argument(
+        "--max-workers",
+        type=int,
+        default=64,
+        help="Maximum number of worker processes (default: 64).",
+    )
     args = parser.parse_args()
     return args
 
@@ -109,27 +115,30 @@ def sync_sensors(scene_path, data_root, output_root):
     # -- load global poses --
     global_pose_data = []
     global_poses_path = os.path.join(scene_path, "poses/gt_trajectory.txt")
-    global_poses_raw = np.loadtxt(global_poses_path, skiprows=1)
-    for gp in global_poses_raw:  # SYNC_KEY, TIMESTAMP, X, Y, Z, R_X, R_Y, R_Z, R_W
-        timestamp = (gp[1] * 1e9).astype(np.int64)
-        pos = gp[2:5]
-        rot = gp[5:9]
-        rot = R.from_quat(rot).as_matrix()
-        pose_homogeneous = np.eye(4)
-        pose_homogeneous[:3, :3] = rot
-        pose_homogeneous[:3, 3] = pos
-        data = dict(
-            sync_key=int(gp[0]), timestamp=int(timestamp), global_pose=pose_homogeneous
-        )
-        global_pose_data.append(data)
+    if os.path.exists(global_poses_path):
+        global_poses_raw = np.loadtxt(global_poses_path, skiprows=1)
+        for gp in global_poses_raw:  # SYNC_KEY, TIMESTAMP, X, Y, Z, R_X, R_Y, R_Z, R_W
+            timestamp = (gp[1] * 1e9).astype(np.int64)
+            pos = gp[2:5]
+            rot = gp[5:9]
+            rot = R.from_quat(rot).as_matrix()
+            pose_homogeneous = np.eye(4)
+            pose_homogeneous[:3, :3] = rot
+            pose_homogeneous[:3, 3] = pos
+            data = dict(
+                sync_key=int(gp[0]),
+                timestamp=int(timestamp),
+                global_pose=pose_homogeneous,
+            )
+            global_pose_data.append(data)
 
     # -- find max sync id --
 
     max_sync_id = max(
-        [v[-1]["sync_key"] for _, v in cameras_data.items()]
-        + [aeva_data[-1]["sync_key"]]
-        + [v[-1]["sync_key"] for _, v in ousters_data.items()]
-        + [radar_data[-1]["sync_key"]]
+        [v[-1]["sync_key"] for _, v in cameras_data.items() if v]
+        + ([aeva_data[-1]["sync_key"]] if aeva_data else [])
+        + [v[-1]["sync_key"] for _, v in ousters_data.items() if v]
+        + ([radar_data[-1]["sync_key"]] if radar_data else [])
     )
 
     # -- sync sensors --
@@ -157,7 +166,7 @@ def sync_sensors(scene_path, data_root, output_root):
                     cam_data.pop(0)
                 elif cam_sync_id < sync_id:
                     raise ValueError(
-                        f"Sync ID CAMERA {cam_sync_id} is grater then current sync id {sync_id}"
+                        f"Sync ID CAMERA {cam_sync_id} is less than current sync id {sync_id}"
                     )
                 else:
                     data["images"][cam] = KEY_MISSING
@@ -177,7 +186,7 @@ def sync_sensors(scene_path, data_root, output_root):
                 aeva_data.pop(0)
             elif aeva_sync_id < sync_id:
                 raise ValueError(
-                    f"Sync ID AEVA {aeva_sync_id} is grater then current sync id {sync_id}"
+                    f"Sync ID AEVA {aeva_sync_id} is less than current sync id {sync_id}"
                 )
             else:
                 data["aeva"] = KEY_MISSING
@@ -201,7 +210,7 @@ def sync_sensors(scene_path, data_root, output_root):
                     ous_data.pop(0)
                 elif ous_sync_id < sync_id:
                     raise ValueError(
-                        f"Sync ID OUSTER {ous_sync_id} is grater then current sync id {sync_id}"
+                        f"Sync ID OUSTER {ous_sync_id} is less than current sync id {sync_id}"
                     )
                 else:
                     data["ouster"][ous] = KEY_MISSING
@@ -221,7 +230,7 @@ def sync_sensors(scene_path, data_root, output_root):
                 radar_data.pop(0)
             elif radar_sync_id < sync_id:
                 raise ValueError(
-                    f"Sync ID RADAR {radar_sync_id} is grater then current sync id {sync_id}"
+                    f"Sync ID RADAR {radar_sync_id} is less than current sync id {sync_id}"
                 )
             else:
                 data["radar"] = KEY_MISSING
@@ -245,7 +254,7 @@ def sync_sensors(scene_path, data_root, output_root):
                 anno_data.pop(0)
             elif annos_sync_id < sync_id:
                 raise ValueError(
-                    f"Sync ID ANNOS {annos_sync_id} is grater then current sync id {sync_id}"
+                    f"Sync ID ANNOS {annos_sync_id} is less than current sync id {sync_id}"
                 )
             else:
                 data["annos"] = KEY_MISSING
@@ -267,7 +276,7 @@ def sync_sensors(scene_path, data_root, output_root):
                 global_pose_data.pop(0)
             elif global_pose_sync_id < sync_id:
                 raise ValueError(
-                    f"Sync ID GLOBAL_POSE {global_pose_sync_id} is grater then current sync id {sync_id}"
+                    f"Sync ID GLOBAL_POSE {global_pose_sync_id} is less than current sync id {sync_id}"
                 )
             else:
                 data["global_pose"] = KEY_MISSING
@@ -292,7 +301,11 @@ if __name__ == "__main__":
     print(f"Syncing data list. Total number of scenes: {len(paths)}")
 
     if args.multiprocessing:
-        with ProcessPoolExecutor(max_workers=os.cpu_count() // 2) as executor:
+        max_workers = min(args.max_workers, os.cpu_count() or 1)
+        print(
+            f"Using {max_workers} worker processes (from --max-workers={args.max_workers}, CPU count={os.cpu_count()})"
+        )
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
             future_to_path = {
                 executor.submit(sync_sensors, path, data_root, output_root): path
                 for path in paths

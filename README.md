@@ -4,10 +4,12 @@
 
 **Torc Robotics · Princeton University · CVPR 2026**
 
-[![Paper](https://img.shields.io/badge/Paper-PDF-2ea44f?style=flat-square)](https://arxiv.org/pdf/2603.02413)
+[![Paper](https://img.shields.io/badge/Paper-PDF-2ea44f?style=flat-square)](https://torc-ai.github.io/TruckDrive/static/TruckDriveMain.pdf)
+[![Supplementary](https://img.shields.io/badge/Supplementary-PDF-6f42c1?style=flat-square)](https://torc-ai.github.io/TruckDrive/static/TruckDriveSupplementary.pdf)
 [![arXiv](https://img.shields.io/badge/arXiv-2603.02413-b31b1b?style=flat-square)](https://arxiv.org/abs/2603.02413)
 [![Project Page](https://img.shields.io/badge/Project-Page-f0ad4e?style=flat-square)](http://torc-ai.github.io/TruckDrive)
-[![Data](https://img.shields.io/badge/Data-Access_Portal-6f42c1?style=flat-square)](https://d3ehgyu1hepsur.cloudfront.net/?prefix=)
+[![Mini Data](https://img.shields.io/badge/Mini_Data-Access_Portal-6f42c1?style=flat-square)](https://d3ehgyu1hepsur.cloudfront.net/?prefix=)
+[![Full Data](https://img.shields.io/badge/Full_Data-Hugging_Face-0366d6?style=flat-square)](https://huggingface.co/datasets/Torc-Robotics/TruckDrive)
 
 **Filippo Ghilotti, Edoardo Palladin, Samuel Brucker, Adam Sigal, Mario Bijelic, Felix Heide**
 
@@ -28,28 +30,79 @@ See [`LICENSE.txt`](./LICENSE.txt) for the full license text.
 
 This devkit is distributed independently of the TruckDrive Dataset. The dataset is governed by separate license terms. See the [Dataset Repository](http://torc-ai.github.io/TruckDrive) for details.
 
-## Downloading the TruckDrive Dataset
-To download the dataset use the provided [bash script](download_truckdrive.sh).
-For faster downloads, install `aria2` first:
-```bash
-sudo apt update
-sudo apt install -y aria2
-```
+## Downloading the full TruckDrive Dataset from Hugging Face
+To download the dataset from Hugginfg Face use the provided [python script](download_truckdrive.py).
+
 Download the full dataset:
 ```bash
-bash download_truckdrive.sh \
+python download_truckdrive.py \
   --out /PATH/TO/TruckDrive \
   --all-scenes \
   --all-modalities 
 ```
-By default, the script uses aria2c automatically if it is installed, with --jobs 4 and --aria2-connections 8, otherwise it defaults to curl (slower).
 To download only one scene:
 ```bash
-bash download_truckdrive.sh \
+python download_truckdrive.py \
   --out /PATH/TO/TruckDrive \
   --scene scene_28_1 \
   --all-modalities 
 ```
+To download only specific folders, replace --all-modalities with options such as:
+--camera --lidar --radar --poses --calibration --annotations --accumulated-gt-depth
+
+Add `--unzip` to extract each modality zip into the scene layout used by the [dataset viewer](dataset_viewer/README.md) (recommended).
+To automatically remove the downloaded files after unzipping add: --remove-zips-after-unzip.
+
+## Download the TruckDrive Dataset mini split (24 scenes)
+To download the dataset use the provided [download script](download_truckdrive.sh). It runs on **bash 3.2+** (including macOS) and **zsh**; `python3` and `curl` are required.
+
+For faster downloads, install `aria2` first:
+
+**Linux (Debian/Ubuntu):**
+```bash
+sudo apt update
+sudo apt install -y aria2
+```
+
+**macOS (Homebrew):**
+```bash
+brew install aria2
+```
+
+Download the full dataset:
+```bash
+chmod +x download_truckdrive.sh
+./download_truckdrive.sh \
+  --out /PATH/TO/TruckDrive_download \
+  --all-scenes \
+  --all-modalities
+```
+
+Add `--unzip` to extract each modality zip into the scene layout used by the [dataset viewer](dataset_viewer/README.md) (recommended):
+
+```bash
+./download_truckdrive.sh \
+  --out /PATH/TO/TruckDrive_download \
+  --scene scene_28_1 \
+  --all-modalities \
+  --unzip \
+  -y
+```
+
+After a download with `--unzip`, point the viewer at `--root-dir /PATH/TO/TruckDrive_download` (the same directory you passed to `--out`).
+
+By default, the script uses aria2c automatically if it is installed, with --jobs 4 and --aria2-connections 8, otherwise it defaults to curl (slower).
+
+To download only one scene:
+```bash
+./download_truckdrive.sh \
+  --out /PATH/TO/TruckDrive_download \
+  --scene scene_28_1 \
+  --all-modalities \
+  --unzip \
+  -y
+```
+
 To download only specific folders, replace --all-modalities with options such as:
 --camera --lidar --radar --poses --calibration --annotations --accumulated-gt-depth
 

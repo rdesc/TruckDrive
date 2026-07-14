@@ -4,12 +4,13 @@ from pathlib import Path
 from tqdm import tqdm
 import os
 import pickle as pkl
-from typing import Dict
+from typing import Dict, Optional
 import numpy as np
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import sys
 
 sys.path.append(str(Path(__file__).parent.parent))
+sys.path.append(str(Path(__file__).parent.parent / "dataset_viewer"))
 from dataset_viewer.vis_utils.load_utils import load_extrinsic_between_nodes
 
 
@@ -46,6 +47,12 @@ def parse_arguments():
         "--multiprocessing",
         action="store_true",
         help="Enable multiprocessing.",
+    )
+    parser.add_argument(
+        "--max-workers",
+        type=int,
+        default=64,
+        help="Maximum number of worker processes (default: 64).",
     )
     args = parser.parse_args()
     return args
@@ -106,6 +113,51 @@ def save_dict_to_pickle(output_dict: Dict, output_pickle_path: Path):
 def load_instances_refined_with_vel(
     anno_path, cam_keys, next_anno_path, prev_vel, delta_t, label_mapping
 ):
+    fields = [
+        "x",
+        "y",
+        "z",
+        "l",
+        "w",
+        "h",
+        "yaw",
+        "vel_x_ego",
+        "vel_y_ego",
+        "vel_z_ego",
+    ]
+
+    def check_if_3d_valid(d, fields):
+        check = (
+            fields[0] in d
+            and fields[1] in d
+            and fields[2] in d
+            and fields[3] in d
+            and fields[4] in d
+            and fields[5] in d
+            and fields[6] in d
+            and isinstance(d[fields[0]], float)
+            and not np.isnan(d[fields[0]])
+            and d[fields[0]] != -1000
+            and isinstance(d[fields[1]], float)
+            and not np.isnan(d[fields[1]])
+            and d[fields[1]] != -1000
+            and isinstance(d[fields[2]], float)
+            and not np.isnan(d[fields[2]])
+            and d[fields[2]] != -1000
+            and isinstance(d[fields[3]], float)
+            and not np.isnan(d[fields[3]])
+            and d[fields[3]] != -1
+            and isinstance(d[fields[4]], float)
+            and not np.isnan(d[fields[4]])
+            and d[fields[4]] != -1
+            and isinstance(d[fields[5]], float)
+            and not np.isnan(d[fields[5]])
+            and d[fields[5]] != -1
+            and isinstance(d[fields[6]], float)
+            and not np.isnan(d[fields[6]])
+        )
+        return check
+
     instances = []
     new_prev_vel = {}
     with open(anno_path, "r") as f:
@@ -115,9 +167,9 @@ def load_instances_refined_with_vel(
             next_anno_file = json.load(f)
         next_pos = {}
         for d in next_anno_file:
-            if "lidar" in d:
-                name = d["class-id"] + str(d["Tracking_ID"])
-                next_pos[name] = (d["lidar"]["x_c"], d["lidar"]["y_c"])
+            if check_if_3d_valid(d, fields):
+                name = str(d["id"])
+                next_pos[name] = (d[fields[0]], d[fields[1]])
     else:
         next_pos = {}
     for j, d in enumerate(anno_file):
@@ -127,7 +179,7 @@ def load_instances_refined_with_vel(
             if ck in d:
                 box_2d[ck] = [d[ck]["x0"], d[ck]["y0"], d[ck]["x1"], d[ck]["y1"]]
         ann = {
-            "object-id": str(d["Tracking_ID"]),
+            "object-id": str(d["class-id"]) + ":-9999",
             "class-id": d["class-id"],
             "bbox_2d": box_2d,
             "bbox_label_2d": label_mapping[d["class-id"]],
@@ -138,46 +190,12 @@ def load_instances_refined_with_vel(
             "num_lidar_pts": 0,
             "num_radar_pts": 0,
         }
-        fields = [
-            "x",
-            "y",
-            "z",
-            "l",
-            "w",
-            "h",
-            "yaw",
-            "vel_x_ego",
-            "vel_y_ego",
-            "vel_z_ego",
-        ]
-        if (
-            fields[0] in d
-            and fields[1] in d
-            and fields[2] in d
-            and fields[3] in d
-            and fields[4] in d
-            and fields[5] in d
-            and fields[6] in d
-            and isinstance(d[fields[0]], float)
-            and not np.isnan(d[fields[0]])
-            and isinstance(d[fields[1]], float)
-            and not np.isnan(d[fields[1]])
-            and isinstance(d[fields[2]], float)
-            and not np.isnan(d[fields[2]])
-            and isinstance(d[fields[3]], float)
-            and not np.isnan(d[fields[3]])
-            and isinstance(d[fields[4]], float)
-            and not np.isnan(d[fields[4]])
-            and isinstance(d[fields[5]], float)
-            and not np.isnan(d[fields[5]])
-            and isinstance(d[fields[6]], float)
-            and not np.isnan(d[fields[6]])
-        ):
-            name = d["class-id"] + str(d["Tracking_ID"])
+        if check_if_3d_valid(d, fields):
+            name = str(d["id"])
             if name in next_pos:
                 x, y = next_pos[name]
-                vel_x = (d["lidar"]["x_c"] - x) / delta_t
-                vel_y = (d["lidar"]["y_c"] - y) / delta_t
+                vel_x = (d[fields[0]] - x) / delta_t
+                vel_y = (d[fields[1]] - y) / delta_t
             elif name not in next_pos and name in prev_vel:
                 vel_x, vel_y = prev_vel[name]
             elif name not in next_pos and name not in prev_vel:
@@ -185,7 +203,7 @@ def load_instances_refined_with_vel(
 
             ann.update(
                 {
-                    "object-id": str(d["Tracking_ID"]),
+                    "object-id": str(d["id"]),
                     "class-id": d["class-id"],
                     "bbox_3d": [
                         d[fields[0]],
@@ -210,6 +228,7 @@ def load_instances_refined_with_vel(
 def process_scene(json_file, data_root_dir, metainfo):
     """Process one sync JSON file and return (training, unlabelled, validation) samples lists."""
     scene_id = os.path.basename(json_file).replace(".json", "").replace("sync_", "")
+    batch_id = int(scene_id.replace("scene_", "").split("_")[0])
     with open(json_file, "r") as f:
         sync_data_sensor = json.load(f)
     sync_data_sensor = sorted(sync_data_sensor, key=lambda item: int(item["timestamp"]))
@@ -222,7 +241,16 @@ def process_scene(json_file, data_root_dir, metainfo):
     aeva2velo = load_extrinsic_between_nodes(
         data_extrinsics, "lidar_aeva_forward_center_wide", "velodyne"
     )
-    per_scene_sensor_keys = metainfo["per_scene_sensor_keys"]
+
+    try:
+        cam_keys = os.listdir(os.path.join(scene_path, "camera", "leopard"))
+    except OSError:
+        cam_keys = []
+    try:
+        ou_keys = os.listdir(os.path.join(scene_path, "lidar", "ouster"))
+    except OSError:
+        ou_keys = []
+
     CALIB = {
         "aeva2velo": aeva2velo,
         "velo2cam": {},
@@ -231,7 +259,7 @@ def process_scene(json_file, data_root_dir, metainfo):
         "height": {},
         "width": {},
     }
-    for cam in per_scene_sensor_keys[scene_id]["cam_keys"]:
+    for cam in cam_keys:
         CALIB["velo2cam"][cam] = load_extrinsic_between_nodes(
             data_extrinsics, "velodyne", f"camera_leopard_{cam}"
         )
@@ -251,10 +279,8 @@ def process_scene(json_file, data_root_dir, metainfo):
     CALIB.update(
         {"velo2ouster": {}, "aeva2ouster": {}, "ouster2velo": {}, "ouster2aeva": {}}
     )
-    per_scene_sensor_keys[scene_id]["ou_keys"] = [
-        k for k in per_scene_sensor_keys[scene_id]["ou_keys"] if "join" not in k
-    ]
-    for ou in per_scene_sensor_keys[scene_id]["ou_keys"]:
+    ou_keys = [k for k in ou_keys if "join" not in k]
+    for ou in ou_keys:
         CALIB["velo2ouster"][ou] = load_extrinsic_between_nodes(
             data_extrinsics, "velodyne", f"lidar_ouster_{ou}"
         )
@@ -267,7 +293,6 @@ def process_scene(json_file, data_root_dir, metainfo):
         CALIB["ouster2aeva"][ou] = load_extrinsic_between_nodes(
             data_extrinsics, f"lidar_ouster_{ou}", "lidar_aeva_forward_center_wide"
         )
-
     CALIB["velo2radar"] = load_extrinsic_between_nodes(
         data_extrinsics, "velodyne", "radar_conti542_forward_left_high"
     )
@@ -285,15 +310,50 @@ def process_scene(json_file, data_root_dir, metainfo):
         "lidar_aeva_forward_center_wide",
     )
 
-    scene_id_validations = metainfo["val_scenes"]
+    scene_id_sequentially_labelled_training = metainfo[
+        "sequentially_labelled_training_scenes"
+    ]
+    scene_id_unlabelled_training = metainfo["unlabelled_training_scenes"]
+    scene_id_non_sequentially_labelled_training = metainfo[
+        "non_sequentially_labelled_training_scenes"
+    ]
+    scene_id_validations = metainfo["validation_scenes"]
+    scene_id_test = metainfo["test_scenes"]
+    assert (
+        scene_id in scene_id_sequentially_labelled_training
+        or scene_id in scene_id_unlabelled_training
+        or scene_id in scene_id_non_sequentially_labelled_training
+        or scene_id in scene_id_validations
+        or scene_id in scene_id_test
+    ), f"Scene {scene_id} is not in any of the training, validation, or test sets."
+
     (
-        training_samples,
-        training_samples_unlabelled,
-        validation_samples,
-        validation_samples_unlabelled,
-    ) = ([], [], [], [])
+        training_all_labelled_samples,
+        training_sequentially_labelled_samples,
+        training_sequentially_unlabelled_samples,
+        validation_unlabelled_samples,
+        validation_labelled_samples,
+        test_unlabelled_samples,
+    ) = ([], [], [], [], [], [])
     prev_vel = {}
     for i in range(sample_count):
+        # scenes from 2_ to 18_ have high frequency ouster sensors
+        if batch_id in range(2, 19):
+            ouster_entries = sync_data_sensor[i].get("ouster") or {}
+            has_any_ouster = any(v is not None for v in ouster_entries.values())
+            only_ousters = (
+                has_any_ouster
+                and sync_data_sensor[i].get("aeva") is None
+                and sync_data_sensor[i].get("radar") is None
+                and sync_data_sensor[i].get("annos") is None
+                and all(
+                    v is None
+                    for v in (sync_data_sensor[i].get("images") or {}).values()
+                )
+            )
+            if only_ousters:
+                # print('Skipping sample with only ouster data for scene')
+                continue
         data = {}
         data["timestamp"] = sync_data_sensor[i]["timestamp"]
         data["scene_id"] = scene_id
@@ -318,7 +378,7 @@ def process_scene(json_file, data_root_dir, metainfo):
                 "lidar2velo": CALIB["aeva2velo"],
             }
         data["images"] = {}
-        for cam in per_scene_sensor_keys[scene_id]["cam_keys"]:
+        for cam in cam_keys:
             if sync_data_sensor[i]["images"][cam] is None:
                 velo2cam = CALIB["velo2cam"][cam]
                 lidar2cam = CALIB["aeva2cam"][cam]
@@ -355,9 +415,9 @@ def process_scene(json_file, data_root_dir, metainfo):
                     "lidar2img": cam2img @ lidar2cam,
                     "velo2img": cam2img @ velo2cam,
                 }
-        if len(per_scene_sensor_keys[scene_id]["ou_keys"]) > 0:
+        if len(ou_keys) > 0:
             data["short_range_lidar_points"] = {}
-            for ou in per_scene_sensor_keys[scene_id]["ou_keys"]:
+            for ou in ou_keys:
                 if sync_data_sensor[i]["ouster"][ou] is None:
                     data["short_range_lidar_points"][ou] = {
                         "short_range_lidar_path": None,
@@ -409,9 +469,16 @@ def process_scene(json_file, data_root_dir, metainfo):
 
         data["instances"] = []
         if scene_id in scene_id_validations:
-            validation_samples_unlabelled.append(data.copy())
+            validation_unlabelled_samples.append(data.copy())
+        elif scene_id in scene_id_test:
+            test_unlabelled_samples.append(data.copy())
         else:
-            training_samples_unlabelled.append(data.copy())
+            assert (
+                scene_id in scene_id_sequentially_labelled_training
+                or scene_id in scene_id_non_sequentially_labelled_training
+                or scene_id in scene_id_unlabelled_training
+            ), f"Scene {scene_id} is not in any of the training, validation, or test sets."
+            training_sequentially_unlabelled_samples.append(data.copy())
 
         if sync_data_sensor[i]["annos"] is not None:
             anno_path = os.path.join(
@@ -431,23 +498,29 @@ def process_scene(json_file, data_root_dir, metainfo):
 
             instances, prev_vel = load_instances_refined_with_vel(
                 anno_path,
-                per_scene_sensor_keys[scene_id]["cam_keys"],
+                cam_keys,
                 next_anno_path,
                 prev_vel,
                 delta_t,
                 metainfo["label_mapping"],
             )
             data["instances"] = instances
+
             if scene_id in scene_id_validations:
-                validation_samples.append(data)
-            else:
-                training_samples.append(data)
+                validation_labelled_samples.append(data)
+            elif scene_id in scene_id_sequentially_labelled_training:
+                training_sequentially_labelled_samples.append(data)
+                training_all_labelled_samples.append(data)
+            elif scene_id in scene_id_non_sequentially_labelled_training:
+                training_all_labelled_samples.append(data)
 
     return (
-        training_samples,
-        training_samples_unlabelled,
-        validation_samples,
-        validation_samples_unlabelled,
+        training_all_labelled_samples,
+        training_sequentially_labelled_samples,
+        training_sequentially_unlabelled_samples,
+        validation_unlabelled_samples,
+        validation_labelled_samples,
+        test_unlabelled_samples,
     )
 
 
@@ -463,94 +536,181 @@ if __name__ == "__main__":
 
     with open(metainfo_path, "r") as f:
         metainfo = json.load(f)
-    json_files = list(sync_info_dir.glob("*.json"))
+    json_files = sorted(sync_info_dir.glob("*.json"))
 
     (
-        training_samples,
-        training_samples_unlabelled,
-        validation_samples,
-        validation_samples_unlabelled,
-    ) = ([], [], [], [])
+        training_all_labelled_samples,
+        training_sequentially_labelled_samples,
+        training_sequentially_unlabelled_samples,
+        validation_unlabelled_samples,
+        validation_labelled_samples,
+        test_unlabelled_samples,
+    ) = ([], [], [], [], [], [])
+
     if args.multiprocessing:
-        with ProcessPoolExecutor(max_workers=os.cpu_count()) as executor:
-            futures = [
-                executor.submit(process_scene, jf, data_root_dir, metainfo)
+        max_workers = min(args.max_workers, os.cpu_count() or 1)
+        print(
+            f"Using {max_workers} worker processes (from --max-workers={args.max_workers}, CPU count={os.cpu_count()})"
+        )
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            future_to_path = {
+                executor.submit(process_scene, jf, data_root_dir, metainfo): jf
                 for jf in json_files
-            ]
+            }
             for fut in tqdm(
-                as_completed(futures),
-                total=len(futures),
+                as_completed(future_to_path),
+                total=len(future_to_path),
                 desc="Processing scenes in parallel",
             ):
-                tr, unlab, val, unlab_val = fut.result()
-                training_samples.extend(tr)
-                training_samples_unlabelled.extend(unlab)
-                validation_samples.extend(val)
-                validation_samples_unlabelled.extend(unlab_val)
+                jf = future_to_path[fut]
+                try:
+                    (
+                        tr_all_lab,
+                        tr_seq_lab,
+                        tr_seq_unlab,
+                        val_unlab,
+                        val_lab,
+                        test_unlab,
+                    ) = fut.result()
+                    training_all_labelled_samples.extend(tr_all_lab)
+                    training_sequentially_labelled_samples.extend(tr_seq_lab)
+                    training_sequentially_unlabelled_samples.extend(tr_seq_unlab)
+                    validation_unlabelled_samples.extend(val_unlab)
+                    validation_labelled_samples.extend(val_lab)
+                    test_unlabelled_samples.extend(test_unlab)
+                except Exception as e:
+                    print(f"Error in worker {Path(jf).name}: {e}")
+
+        print(
+            "Total sequential + non-sequential labelled training samples:",
+            len(training_all_labelled_samples),
+        )
+        print(
+            "Total sequential labelled training samples:",
+            len(training_sequentially_labelled_samples),
+        )
+        print(
+            "Total sequential unlabelled training samples:",
+            len(training_sequentially_unlabelled_samples),
+        )
+        print(
+            "Total unlabelled validation samples:",
+            len(validation_unlabelled_samples),
+        )
+        print(
+            "Total labelled validation samples:",
+            len(validation_labelled_samples),
+        )
+        print(
+            "Total unlabelled test samples:",
+            len(test_unlabelled_samples),
+        )
+
+        print("\n\nSaving annotations to JSON and Pickle files...\n\n")
+
+        save_dict_to_json(
+            output_dict={
+                "metainfo": metainfo_annotations,
+                "data_list": training_all_labelled_samples,
+            },
+            output_json_path=data_output_dir / "annotations_train_all_labelled.json",
+        )
+        save_dict_to_pickle(
+            output_dict={
+                "metainfo": metainfo_annotations,
+                "data_list": training_all_labelled_samples,
+            },
+            output_pickle_path=data_output_dir / "annotations_train_all_labelled.pkl",
+        )
+
+        save_dict_to_json(
+            output_dict={
+                "metainfo": metainfo_annotations,
+                "data_list": training_sequentially_labelled_samples,
+            },
+            output_json_path=data_output_dir
+            / "annotations_train_sequential_labelled.json",
+        )
+        save_dict_to_pickle(
+            output_dict={
+                "metainfo": metainfo_annotations,
+                "data_list": training_sequentially_labelled_samples,
+            },
+            output_pickle_path=data_output_dir
+            / "annotations_train_sequential_labelled.pkl",
+        )
+
+        save_dict_to_json(
+            output_dict={
+                "metainfo": metainfo_annotations,
+                "data_list": training_sequentially_unlabelled_samples,
+            },
+            output_json_path=data_output_dir
+            / "annotations_train_sequential_unlabelled.json",
+        )
+        save_dict_to_pickle(
+            output_dict={
+                "metainfo": metainfo_annotations,
+                "data_list": training_sequentially_unlabelled_samples,
+            },
+            output_pickle_path=data_output_dir
+            / "annotations_train_sequential_unlabelled.pkl",
+        )
+
+        save_dict_to_json(
+            output_dict={
+                "metainfo": metainfo_annotations,
+                "data_list": validation_unlabelled_samples,
+            },
+            output_json_path=data_output_dir / "annotations_unlabelled_val.json",
+        )
+        save_dict_to_pickle(
+            output_dict={
+                "metainfo": metainfo_annotations,
+                "data_list": validation_unlabelled_samples,
+            },
+            output_pickle_path=data_output_dir / "annotations_unlabelled_val.pkl",
+        )
+
+        save_dict_to_json(
+            output_dict={
+                "metainfo": metainfo_annotations,
+                "data_list": validation_labelled_samples,
+            },
+            output_json_path=data_output_dir / "annotations_labelled_val.json",
+        )
+        save_dict_to_pickle(
+            output_dict={
+                "metainfo": metainfo_annotations,
+                "data_list": validation_labelled_samples,
+            },
+            output_pickle_path=data_output_dir / "annotations_labelled_val.pkl",
+        )
+
+        save_dict_to_json(
+            output_dict={
+                "metainfo": metainfo_annotations,
+                "data_list": test_unlabelled_samples,
+            },
+            output_json_path=data_output_dir / "annotations_unlabelled_test.json",
+        )
+        save_dict_to_pickle(
+            output_dict={
+                "metainfo": metainfo_annotations,
+                "data_list": test_unlabelled_samples,
+            },
+            output_pickle_path=data_output_dir / "annotations_unlabelled_test.pkl",
+        )
+
     else:
         print("----- DEBUG MODE: only one worker, only one scene -----")
         for path in tqdm(json_files[:1], desc=" scenes"):
-            tr, unlab, val, unlab_val = process_scene(path, data_root_dir, metainfo)
-            training_samples.extend(tr)
-            training_samples_unlabelled.extend(unlab)
-            validation_samples.extend(val)
-            validation_samples_unlabelled.extend(unlab_val)
-
-    print("Total labelled training samples:", len(training_samples))
-    print(
-        "Total labelled + unlabelled training samples:",
-        len(training_samples_unlabelled),
-    )
-    print("Total labelled validation samples:", len(validation_samples))
-    print(
-        "Total labelled + unlabelled validation samples:",
-        len(validation_samples_unlabelled),
-    )
-
-    save_dict_to_json(
-        output_dict={"metainfo": metainfo_annotations, "data_list": training_samples},
-        output_json_path=data_output_dir / "annotations_train_labelled.json",
-    )
-    save_dict_to_pickle(
-        output_dict={"metainfo": metainfo_annotations, "data_list": training_samples},
-        output_pickle_path=data_output_dir / "annotations_train_labelled.pkl",
-    )
-
-    save_dict_to_json(
-        output_dict={"metainfo": metainfo_annotations, "data_list": validation_samples},
-        output_json_path=data_output_dir / "annotations_val_labelled.json",
-    )
-    save_dict_to_pickle(
-        output_dict={"metainfo": metainfo_annotations, "data_list": validation_samples},
-        output_pickle_path=data_output_dir / "annotations_val_labelled.pkl",
-    )
-
-    save_dict_to_json(
-        output_dict={
-            "metainfo": metainfo_annotations,
-            "data_list": training_samples_unlabelled,
-        },
-        output_json_path=data_output_dir / "annotations_train_unlabelled.json",
-    )
-    save_dict_to_pickle(
-        output_dict={
-            "metainfo": metainfo_annotations,
-            "data_list": training_samples_unlabelled,
-        },
-        output_pickle_path=data_output_dir / "annotations_train_unlabelled.pkl",
-    )
-
-    save_dict_to_json(
-        output_dict={
-            "metainfo": metainfo_annotations,
-            "data_list": validation_samples_unlabelled,
-        },
-        output_json_path=data_output_dir / "annotations_val_unlabelled.json",
-    )
-    save_dict_to_pickle(
-        output_dict={
-            "metainfo": metainfo_annotations,
-            "data_list": validation_samples_unlabelled,
-        },
-        output_pickle_path=data_output_dir / "annotations_val_unlabelled.pkl",
-    )
+            tr_all_lab, tr_seq_lab, tr_seq_unlab, val_unlab, val_lab, test_unlab = (
+                process_scene(path, data_root_dir, metainfo)
+            )
+            training_all_labelled_samples.extend(tr_all_lab)
+            training_sequentially_labelled_samples.extend(tr_seq_lab)
+            training_sequentially_unlabelled_samples.extend(tr_seq_unlab)
+            validation_unlabelled_samples.extend(val_unlab)
+            validation_labelled_samples.extend(val_lab)
+            test_unlabelled_samples.extend(test_unlab)

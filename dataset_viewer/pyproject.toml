@@ -1,0 +1,25 @@
+[project]
+name = "truckdrive-dataset-viewer"
+version = "0.1.0"
+description = "Interactive visualization tools for the TruckDrive dataset"
+readme = "README.md"
+requires-python = "==3.11.*"
+dependencies = [
+    "imageio",
+    "matplotlib",
+    "numpy",
+    "open3d>=0.18",
+    "pillow",
+    "pyquaternion",
+    "PyQt5>=5.15",
+    "scipy",
+]
+
+[project.optional-dependencies]
+video = [
+    "imageio[ffmpeg]",
+    "imageio[pyav]",
+]
+
+[tool.uv]
+package = false
